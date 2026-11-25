@@ -1,6 +1,6 @@
 // Service worker mínimo: guarda la cáscara de la app para abrirla sin red. Los datos nunca se cachean.
-var VERSION = 'gc-v9';
-var CASCARA = ['./', 'index.html', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+var VERSION = 'gc-v10';
+var CASCARA = ['./', 'index.html', 'app.js', 'escaner.js', 'config.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(CASCARA); }).then(function () { return self.skipWaiting(); }));

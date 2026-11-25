@@ -88,7 +88,7 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
         <button type="button" id="btn-camara">Hacer foto del ticket</button>
         <button type="button" id="btn-archivo" class="sec">Escanear o elegir archivo</button>
       </div>
-      <div id="repetir-foto" class="oculto" style="margin-top:6px"><button type="button" id="btn-repetir" class="mini sec">Repetir foto</button></div>
+      <div id="repetir-foto" class="oculto" style="margin-top:6px"><button type="button" id="btn-repetir" class="mini sec">Repetir foto</button><button type="button" id="btn-sin-recorte" class="mini sec oculto">Usar la foto sin recortar</button></div>
       <input id="f-camara" class="sr" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
       <input id="f-foto" class="sr" type="file" accept="image/*,application/pdf" tabindex="-1" aria-hidden="true">
       <div class="sub" style="font-size:13px;margin-top:8px">Se lee mejor con buena luz y el ticket plano. Para el escáner del iPhone: «Escanear o elegir archivo» → «Elegir archivo» → botón ··· → «Escanear documentos». Si no quieres ticket, rellena los datos a mano.</div>
@@ -105,6 +105,7 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
   </form>
 </main>
 <script src="config.js"></script>
+<script src="escaner.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

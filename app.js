@@ -2,7 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
-var VERSION_APP = 'v9';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
+var VERSION_APP = 'v10';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
@@ -212,10 +212,9 @@ function jpegQueQuepa(canvas, calidad) {
   return null;
 }
 
-// Copia solo para el OCR: escala de grises y contraste estirado (los tickets térmicos salen pálidos). La que se guarda no se toca.
+// Copia solo para el OCR: luz aplanada, escala de grises y contraste estirado (los tickets térmicos salen pálidos). La que se guarda no se toca.
 function copiaParaOCR(canvas) {
-  var c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
-  var g = c.getContext('2d'); g.drawImage(canvas, 0, 0);
+  var c = Escaner.aplanarLuz(canvas), g = c.getContext('2d');
   var datos = g.getImageData(0, 0, c.width, c.height), p = datos.data, n = p.length / 4, hist = new Uint32Array(256), i;
   for (i = 0; i < p.length; i += 4) { var y = (p[i] * 299 + p[i + 1] * 587 + p[i + 2] * 114) / 1000 | 0; p[i] = y; hist[y]++; }
   var acum = 0, lo = 0, hi = 255;
@@ -229,21 +228,29 @@ function copiaParaOCR(canvas) {
   return jpegQueQuepa(c, 0.88);
 }
 
-// Foto: se reduce en el propio móvil. Devuelve { b64 (se guarda), ocr (copia mejorada para leer), vista }.
-function reducirFoto(archivo) {
+// Foto: se escanea en el propio móvil (busca el ticket, lo recorta y lo endereza; si no encuentra un rectángulo creíble usa la foto entera)
+// y se reduce. Devuelve { b64 (se guarda), ocr (copia mejorada para leer), vista, recortado }.
+function reducirFoto(archivo, opciones) {
   return new Promise(function (resolve, reject) {
     var url = URL.createObjectURL(archivo);
     var img = new Image();
     img.onload = function () {
-      var k = Math.min(1, LADO_MAX / Math.max(img.width, img.height));
-      var c = document.createElement('canvas');
-      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      var c = null;
+      if (!opciones || opciones.recortar !== false) {
+        try { var rect = Escaner.detectarEnImagen(img); if (rect) c = Escaner.recortar(img, rect, LADO_MAX); } catch (e) { c = null; /* sin recorte: foto entera */ }
+      }
+      var recortado = !!c;
+      if (!c) {
+        var k = Math.min(1, LADO_MAX / Math.max(img.width, img.height));
+        c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      }
       URL.revokeObjectURL(url);
       var b64 = jpegQueQuepa(c, 0.85);
       if (!b64) { reject(new Error('La foto es demasiado grande')); return; }
       var ocr = null; try { ocr = copiaParaOCR(c); } catch (e) { /* sin copia mejorada: se lee la original */ }
-      resolve({ b64: b64, ocr: ocr || b64, vista: 'data:image/jpeg;base64,' + b64 });
+      resolve({ b64: b64, ocr: ocr || b64, vista: 'data:image/jpeg;base64,' + b64, recortado: recortado });
     };
     img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('No se puede leer esa imagen')); };
     img.src = url;
@@ -274,10 +281,11 @@ function limpiarMarcas() { ['f-concepto', 'f-importe', 'f-fecha'].forEach(functi
 // Envía la foto a leer y rellena SOLO los campos que sigan vacíos; nunca pisa lo que la persona ya escribió.
 function leerTicket(b64) {
   var yo = ++lecturaId; propuestaOcr = null;
-  info('Leyendo el ticket…');
+  var pre = fotoLista && fotoLista.recortado ? 'Ticket recortado y enderezado. ' : '';
+  info(pre + 'Leyendo el ticket…');
   llamar({ accion: 'leer', imagen: b64 }).then(function (r) {
     if (yo !== lecturaId) return;                       // ha cambiado de foto mientras tanto
-    if (!r.ok || !r.propuesta) { info('No se ha podido leer el ticket de forma automática: rellénalo tú.'); return; }
+    if (!r.ok || !r.propuesta) { info(pre + 'No se ha podido leer el ticket de forma automática: rellénalo tú.'); return; }
     var p = r.propuesta, c = p.confianza || {}, puestos = [];
     propuestaOcr = p;
     // Un campo es «libre» si está vacío o si lo rellenó el lector antes y la persona no lo ha tocado (sigue marcado). Lo escrito a mano nunca se pisa.
@@ -285,23 +293,29 @@ function leerTicket(b64) {
     if (p.comercio && libre('f-concepto')) { $('f-concepto').value = p.comercio; marcar('f-concepto', c.comercio); puestos.push('comercio'); }
     if (p.total && libre('f-importe')) { $('f-importe').value = String(p.total).replace('.', ','); marcar('f-importe', c.total); puestos.push('importe'); }
     if (p.fecha && ($('f-fecha').value === hoy() || libre('f-fecha'))) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
-    info(puestos.length ? 'Leído del ticket: revisa ' + puestos.join(', ') + ' antes de guardar. Amarillo = revísalo, rojo = dudoso.'
-      : 'No he podido leer el ticket. Rellena los datos a mano: la foto se guarda igualmente.');
+    info(pre + (puestos.length ? 'Leído del ticket: revisa ' + puestos.join(', ') + ' antes de guardar. Amarillo = revísalo, rojo = dudoso.'
+      : 'No he podido leer el ticket. Rellena los datos a mano: la foto se guarda igualmente.'));
   }).catch(function () { if (yo === lecturaId) info('Sin conexión: no se ha leído el ticket.'); });
 }
 
 // Sirve a los dos selectores: la cámara (capture) y «escanear o elegir archivo» (foto o PDF).
+var ultimoArchivo = null;
 function elegirFoto(ev) {
   var input = ev.target, f = input.files[0];
   input.value = '';   // así se puede volver a elegir el mismo archivo
+  if (f) procesarArchivo(f, {});
+}
+
+function procesarArchivo(f, opciones) {
+  ultimoArchivo = f;
   fotoLista = null; propuestaOcr = null; lecturaId++; info('');
   $('f-miniatura').classList.add('oculto'); $('f-pdf').classList.add('oculto');
-  if (!f) return;
   var esPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-  $('msg').textContent = esPdf ? 'Preparando el PDF…' : 'Preparando la foto…';
-  (esPdf ? leerPdf(f) : reducirFoto(f)).then(function (r) {
+  $('msg').textContent = esPdf ? 'Preparando el PDF…' : 'Escaneando el ticket…';
+  (esPdf ? leerPdf(f) : reducirFoto(f, opciones)).then(function (r) {
     fotoLista = r; $('msg').textContent = '';
     botonesFoto(true);   // ya hay ticket: se quitan las opciones y solo queda «Repetir foto»
+    $('btn-sin-recorte').classList.toggle('oculto', !r.recortado);   // si se recortó, se ofrece volver a la foto entera
     if (r.pdf) { $('f-pdf').textContent = 'PDF listo: ' + r.nombre + ' (' + r.kb + ' KB)'; $('f-pdf').classList.remove('oculto'); }
     else { $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); }
     leerTicket(r.ocr);
@@ -365,6 +379,7 @@ document.addEventListener('DOMContentLoaded', function () {
   $('btn-camara').addEventListener('click', function () { $('f-camara').click(); });
   $('btn-archivo').addEventListener('click', function () { $('f-foto').click(); });
   $('btn-repetir').addEventListener('click', function () { $('f-camara').click(); });
+  $('btn-sin-recorte').addEventListener('click', function () { if (ultimoArchivo) procesarArchivo(ultimoArchivo, { recortar: false }); });
   $('f-camara').addEventListener('change', elegirFoto);
   $('cancelar').addEventListener('click', cerrarFormulario);
   $('ver-anulados').addEventListener('change', function () { if (ultimaRespuesta) pintar(ultimaRespuesta); });
