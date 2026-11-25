@@ -38,6 +38,9 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 .dudoso{border-color:#d9534f !important;background:#fdecea !important;color:#1c2421 !important}
 #visor{position:fixed;inset:0;background:#000d;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;z-index:5}
 #visor:not(.oculto){display:flex}
+.sr{position:absolute !important;width:1px !important;height:1px !important;padding:0 !important;border:0 !important;opacity:0;overflow:hidden;pointer-events:none}
+.botones-foto{display:flex;gap:8px;margin-top:6px}
+.botones-foto button{margin-top:0;flex:1;padding:14px 8px}
 .fila.anulada{opacity:.55}
 .fila.anulada .t{text-decoration:line-through}
 .mini{margin:6px 6px 0 0;padding:6px 10px;font-size:13px;width:auto}
@@ -61,7 +64,7 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 <main id="vista-lista" class="oculto">
   <div class="saldo"><span id="periodo"></span><b id="saldo"></b><span id="totales"></span></div>
   <div id="aviso" role="status" class="oculto" style="background:#fff3cd;color:#5c4400;border-radius:10px;padding:10px 12px;margin:8px 0"></div>
-  <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0"><input type="checkbox" id="ver-anulados" style="width:auto;margin:0"> Mostrar gastos anulados</label>
+  <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0"><input type="checkbox" id="ver-anulados" style="width:auto;margin:0"> Mostrar gastos anulados <span id="n-anulados"></span></label>
   <div id="lista"></div>
 </main>
 <div id="visor" class="oculto">
@@ -81,9 +84,13 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
     <label for="f-fecha">Fecha</label>
     <input id="f-fecha" type="date" required>
     <div id="bloque-foto">
-      <label for="f-foto">Foto o escaneo del ticket (opcional)</label>
-      <input id="f-foto" type="file" accept="image/*,application/pdf">
-      <div class="sub" style="font-size:13px;margin-top:4px">Se lee mejor con buena luz y el ticket plano. También vale el escáner del iPhone: «Elegir archivo» → botón ··· → «Escanear documentos» (se guarda como PDF).</div>
+      <div class="botones-foto">
+        <button type="button" id="btn-camara">Hacer foto del ticket</button>
+        <button type="button" id="btn-archivo" class="sec">Escanear o elegir archivo</button>
+      </div>
+      <input id="f-camara" class="sr" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+      <input id="f-foto" class="sr" type="file" accept="image/*,application/pdf" tabindex="-1" aria-hidden="true">
+      <div class="sub" style="font-size:13px;margin-top:8px">Se lee mejor con buena luz y el ticket plano. Para el escáner del iPhone: «Escanear o elegir archivo» → «Elegir archivo» → botón ··· → «Escanear documentos». Si no quieres ticket, rellena los datos a mano.</div>
       <img id="f-miniatura" alt="Vista previa del ticket" class="oculto" style="max-width:100%;max-height:180px;margin-top:8px;border-radius:8px">
       <div id="f-pdf" class="sub oculto" style="margin-top:8px"></div>
       <div id="info-ocr" class="sub" role="status" style="margin-top:6px"></div>

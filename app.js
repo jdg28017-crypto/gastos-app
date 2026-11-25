@@ -2,6 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
+var VERSION_APP = 'v8';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
@@ -68,7 +69,7 @@ function mostrar(vista) {
 }
 
 function pintar(r) {
-  $('quien').textContent = 'Sesión de ' + r.yo;
+  $('quien').textContent = 'Sesión de ' + r.yo + ' · app ' + VERSION_APP + ' · servidor ' + (r.version || 'antiguo (sin versión)');
   $('periodo').textContent = r.periodo.nombre;
   var s = r.saldo;
   $('saldo').textContent = s.deudor ? s.deudor + ' debe a ' + s.acreedor + ': ' + euros.format(s.importe) : 'Saldo a cero';
@@ -77,6 +78,8 @@ function pintar(r) {
   var cont = $('lista');
   cont.textContent = '';
   var verAnulados = $('ver-anulados').checked;
+  var ocultos = r.movimientos.filter(function (m) { return m.anulado; }).length;
+  $('n-anulados').textContent = ocultos ? '(' + ocultos + ')' : '';
   r.movimientos.filter(function (m) { return verAnulados || !m.anulado; })
     .sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; })
     .forEach(function (m) {
@@ -90,8 +93,12 @@ function pintar(r) {
       i.textContent = euros.format(m.importe_imputado);
       if (m.tiene_ticket && !m.anulado) c.append(botonMini('Ver ticket', '', function (b) { verTicket(m.id, b); }));
       if (m.pagador === r.yo) {   // cada uno corrige solo lo que apuntó
-        if (m.anulado) c.append(botonMini('Restaurar', 'sec', function (b) { cambiarEstado('restaurar', m.id, b); }));
-        else {
+        if (m.anulado) {
+          c.append(botonMini('Restaurar', 'sec', function (b) { cambiarEstado('restaurar', m.id, b); }));
+          c.append(botonMini('Borrar para siempre', 'peligro', function (b) {
+            if (confirm('¿Borrar para siempre este gasto?\n\n' + m.concepto + ' · ' + euros.format(m.importe_imputado) + '\n\nSale de la lista y de la hoja, y su foto va a la papelera de Drive. En la pestaña Historial queda una copia de los datos.')) cambiarEstado('eliminar', m.id, b);
+          }));
+        } else {
           c.append(botonMini('Editar', 'sec', function () { abrirEdicion(m); }));
           c.append(botonMini('Anular', 'peligro', function (b) {
             if (confirm('¿Anular este gasto?\n\n' + m.concepto + ' · ' + euros.format(m.importe_imputado) + '\n\nDejará de contar en el saldo. Se puede restaurar.')) cambiarEstado('anular', m.id, b);
@@ -274,8 +281,10 @@ function leerTicket(b64) {
   }).catch(function () { if (yo === lecturaId) info('Sin conexión: no se ha leído el ticket.'); });
 }
 
-function elegirFoto() {
-  var f = $('f-foto').files[0];
+// Sirve a los dos selectores: la cámara (capture) y «escanear o elegir archivo» (foto o PDF).
+function elegirFoto(ev) {
+  var input = ev.target, f = input.files[0];
+  input.value = '';   // así se puede volver a elegir el mismo archivo
   fotoLista = null; propuestaOcr = null; lecturaId++; info('');
   $('f-miniatura').classList.add('oculto'); $('f-pdf').classList.add('oculto');
   if (!f) return;
@@ -286,7 +295,7 @@ function elegirFoto() {
     if (r.pdf) { $('f-pdf').textContent = 'PDF listo: ' + r.nombre + ' (' + r.kb + ' KB)'; $('f-pdf').classList.remove('oculto'); }
     else { $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); }
     leerTicket(r.ocr);
-  }).catch(function (e) { $('msg').textContent = e.message; $('f-foto').value = ''; });
+  }).catch(function (e) { $('msg').textContent = e.message; });
 }
 
 function cargar() {
@@ -337,7 +346,15 @@ function hoy() { var d = new Date(); return new Date(d - d.getTimezoneOffset() *
 document.addEventListener('DOMContentLoaded', function () {
   procesarAlta();
   config = leerConfig();
-  $('nuevo').addEventListener('click', function () { editandoId = null; prepararFormulario(false); $('f-fecha').value = hoy(); mostrar('form'); $('f-concepto').focus(); });
+  // Apuntar un gasto abre directamente la cámara. Solo se puede hacer dentro de este toque (los navegadores no dejan abrirla sin él).
+  // Si se cancela, queda el formulario con los dos botones y los campos para rellenar a mano.
+  $('nuevo').addEventListener('click', function () {
+    editandoId = null; prepararFormulario(false); $('f-fecha').value = hoy(); mostrar('form');
+    $('f-camara').click();
+  });
+  $('btn-camara').addEventListener('click', function () { $('f-camara').click(); });
+  $('btn-archivo').addEventListener('click', function () { $('f-foto').click(); });
+  $('f-camara').addEventListener('change', elegirFoto);
   $('cancelar').addEventListener('click', cerrarFormulario);
   $('ver-anulados').addEventListener('change', function () { if (ultimaRespuesta) pintar(ultimaRespuesta); });
   $('f-foto').addEventListener('change', elegirFoto);
