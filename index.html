@@ -34,6 +34,8 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 .fab{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));box-shadow:0 4px 14px #0004}
 #msg{min-height:1.4em;color:var(--rojo);font-size:14px}
 .oculto{display:none}
+.revisar{border-color:#e0a800 !important;background:#fff8e1 !important;color:#1c2421 !important}
+.dudoso{border-color:#d9534f !important;background:#fdecea !important;color:#1c2421 !important}
 #visor{position:fixed;inset:0;background:#000d;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;z-index:5}
 #visor:not(.oculto){display:flex}
 </style>
@@ -73,6 +75,7 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
     <label for="f-foto">Foto del ticket (opcional)</label>
     <input id="f-foto" type="file" accept="image/*">
     <img id="f-miniatura" alt="Vista previa del ticket" class="oculto" style="max-width:100%;max-height:180px;margin-top:8px;border-radius:8px">
+    <div id="info-ocr" class="sub" role="status" style="margin-top:6px"></div>
     <label for="f-reparto">Reparto</label>
     <select id="f-reparto"><option value="50/50">50 / 50</option><option value="100-otro">100 % del otro</option></select>
     <div id="msg" role="alert"></div>

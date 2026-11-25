@@ -140,13 +140,40 @@ function reducirFoto(archivo) {
 }
 
 var fotoLista = null;   // { b64, vista } de la foto elegida en el formulario
+var propuestaOcr = null, lecturaId = 0;
+
+function info(texto) { $('info-ocr').textContent = texto || ''; }
+function marcar(id, confianza) {
+  var el = $(id); el.classList.remove('revisar', 'dudoso');
+  el.classList.add(confianza === 'baja' || !confianza ? 'dudoso' : 'revisar');   // amarillo: revísalo · rojo: dudoso
+}
+function limpiarMarcas() { ['f-concepto', 'f-importe', 'f-fecha'].forEach(function (id) { $(id).classList.remove('revisar', 'dudoso'); }); info(''); }
+
+// Envía la foto a leer y rellena SOLO los campos que sigan vacíos; nunca pisa lo que la persona ya escribió.
+function leerTicket(b64) {
+  var yo = ++lecturaId; propuestaOcr = null;
+  info('Leyendo el ticket…');
+  llamar({ accion: 'leer', imagen: b64 }).then(function (r) {
+    if (yo !== lecturaId) return;                       // ha cambiado de foto mientras tanto
+    if (!r.ok || !r.propuesta) { info('No se ha podido leer el ticket de forma automática: rellénalo tú.'); return; }
+    var p = r.propuesta, c = p.confianza || {}, puestos = [];
+    propuestaOcr = p;
+    if (p.comercio && !$('f-concepto').value.trim()) { $('f-concepto').value = p.comercio; marcar('f-concepto', c.comercio); puestos.push('comercio'); }
+    if (p.total && !$('f-importe').value.trim()) { $('f-importe').value = String(p.total).replace('.', ','); marcar('f-importe', c.total); puestos.push('importe'); }
+    if (p.fecha && $('f-fecha').value === hoy()) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
+    info(puestos.length ? 'Leído del ticket: revisa ' + puestos.join(', ') + ' antes de guardar. Amarillo = revísalo, rojo = dudoso.'
+      : 'No he podido leer nada con seguridad: rellénalo tú.');
+  }).catch(function () { if (yo === lecturaId) info('Sin conexión: no se ha leído el ticket.'); });
+}
+
 function elegirFoto() {
   var f = $('f-foto').files[0];
-  fotoLista = null; $('f-miniatura').classList.add('oculto');
+  fotoLista = null; propuestaOcr = null; lecturaId++; info(''); $('f-miniatura').classList.add('oculto');
   if (!f) return;
   $('msg').textContent = 'Preparando la foto…';
   reducirFoto(f).then(function (r) {
     fotoLista = r; $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); $('msg').textContent = '';
+    leerTicket(r.b64);
   }).catch(function (e) { $('msg').textContent = e.message; $('f-foto').value = ''; });
 }
 
@@ -183,11 +210,11 @@ function guardar(ev) {
   $('guardar').disabled = true;
   var mov = { id: idEnCurso, concepto: $('f-concepto').value, fecha: $('f-fecha').value,
     importe_imputado: imp.valor, expresion: imp.expresion, reparto: $('f-reparto').value };
-  if (fotoLista) mov.imagen = fotoLista.b64;
+  if (fotoLista) { mov.imagen = fotoLista.b64; if (propuestaOcr) mov.ocr = propuestaOcr; }
   llamar({ accion: 'anadir', mov: mov })
     .then(function (r) {
       if (!r.ok) { $('msg').textContent = 'No se ha guardado: ' + (r.detalle || r.error); return; }
-      idEnCurso = null; fotoLista = null; $('form').reset(); $('f-miniatura').classList.add('oculto');
+      idEnCurso = null; fotoLista = null; propuestaOcr = null; lecturaId++; $('form').reset(); $('f-miniatura').classList.add('oculto'); limpiarMarcas();
       pintar(r); mostrarAvisos(r.avisos);
     })
     .catch(function () { $('msg').textContent = 'Sin conexión. Vuelve a pulsar Guardar cuando tengas cobertura; no se duplicará.'; })
@@ -201,9 +228,12 @@ document.addEventListener('DOMContentLoaded', function () {
   config = leerConfig();
   $('nuevo').addEventListener('click', function () { $('f-fecha').value = hoy(); mostrar('form'); $('f-concepto').focus(); });
   $('cancelar').addEventListener('click', function () {
-    idEnCurso = null; fotoLista = null; $('form').reset(); $('f-miniatura').classList.add('oculto'); mostrar('lista');
+    idEnCurso = null; fotoLista = null; propuestaOcr = null; lecturaId++; $('form').reset(); $('f-miniatura').classList.add('oculto'); limpiarMarcas(); mostrar('lista');
   });
   $('f-foto').addEventListener('change', elegirFoto);
+  ['f-concepto', 'f-importe', 'f-fecha'].forEach(function (id) {   // al tocar un campo se da por revisado
+    $(id).addEventListener('input', function () { $(id).classList.remove('revisar', 'dudoso'); });
+  });
   $('visor-cerrar').addEventListener('click', function () { $('visor').classList.add('oculto'); $('visor-img').removeAttribute('src'); });
   $('form').addEventListener('submit', guardar);
   $('form-alta').addEventListener('submit', altaPegada);
