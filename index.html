@@ -77,6 +77,27 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
   <div id="lista"></div>
   <h2 id="titulo-cerrados" class="oculto" style="font-size:16px;margin:20px 0 4px">Periodos cerrados</h2>
   <div id="cerrados"></div>
+  <h2 id="titulo-anual" class="oculto" style="font-size:16px;margin:20px 0 4px">Excel anual y archivo</h2>
+  <div class="sub" style="margin-bottom:4px">Un libro por año, con una hoja por periodo. Los años anteriores quedan archivados.</div>
+  <div id="anios"></div>
+  <div id="ultimo-envio" class="sub" style="margin-top:6px"></div>
+</main>
+
+<main id="vista-envio" class="oculto">
+  <form id="form-envio" autocomplete="off">
+    <h2 id="envio-titulo" style="font-size:17px;margin:0 0 4px">Enviar el Excel</h2>
+    <div class="sub">Se envía el libro del año (una hoja por periodo) a los correos marcados. Cualquiera de los dos puede añadir o quitar correos de la lista.</div>
+    <div id="e-lista" style="margin-top:10px"></div>
+    <div class="sub" style="margin-top:10px">Sale desde la cuenta de Google que instaló la app. Máximo 10 correos en la lista y 10 envíos al día.</div>
+    <div id="msg-envio" role="alert" style="color:var(--rojo);min-height:1.4em"></div>
+    <button type="submit" id="enviar-excel">Enviar a los marcados</button>
+    <button type="button" class="sec" id="volver-envio">Volver</button>
+  </form>
+  <form id="form-correo" autocomplete="off">
+    <label for="e-email">Añadir un correo a la lista</label>
+    <input id="e-email" type="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="nombre@ejemplo.com" required>
+    <button type="submit" class="sec">Añadir a la lista</button>
+  </form>
 </main>
 
 <main id="vista-cierre" class="oculto">

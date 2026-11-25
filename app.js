@@ -2,7 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
-var VERSION_APP = 'v12';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
+var VERSION_APP = 'v13';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
@@ -66,7 +66,7 @@ var fechaCorta = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-di
 var periodoCongelado = false;   // con un cierre propuesto no se puede apuntar ni cambiar nada hasta confirmarlo o rechazarlo
 
 function mostrar(vista) {
-  ['alta', 'lista', 'form', 'cierre'].forEach(function (v) { $('vista-' + v).classList.toggle('oculto', v !== vista); });
+  ['alta', 'lista', 'form', 'cierre', 'envio'].forEach(function (v) { $('vista-' + v).classList.toggle('oculto', v !== vista); });
   $('nuevo').classList.toggle('oculto', vista !== 'lista' || periodoCongelado);
 }
 
@@ -78,6 +78,7 @@ function pintar(r) {
   $('totales').textContent = 'Ana ' + euros.format(s.total_ana) + ' · Juan ' + euros.format(s.total_juan);
   ultimaRespuesta = r;
   pintarPeriodo(r);
+  pintarArchivo(r);
   var cont = $('lista');
   cont.textContent = '';
   var verAnulados = $('ver-anulados').checked;
@@ -171,9 +172,9 @@ function accionCierre(accion, boton) {
 }
 
 // Baja el .xlsx (cerrado, o el provisional con id 'actual') sin pasar por Google: el servidor lo da con el token.
-function descargarExcel(id, boton) {
+function descargarExcel(id, boton, anual) {
   boton.disabled = true;
-  llamar({ accion: 'excel', id: id }).then(function (r) {
+  llamar(anual ? { accion: 'excel_anual', anio: id } : { accion: 'excel', id: id }).then(function (r) {
     if (!r.ok) { mostrarAvisos(['No se ha podido preparar el Excel.']); return; }
     var bin = atob(r.datos), bytes = new Uint8Array(bin.length);
     for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
@@ -182,6 +183,87 @@ function descargarExcel(id, boton) {
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }).catch(function () { mostrarAvisos(['Sin conexión: no se puede preparar el Excel.']); })
     .then(function () { boton.disabled = false; });
+}
+
+// ---- Excel anual, archivo por años y envío por correo ----
+var anioEnvio = null, seleccionCorreos = {};   // seleccionCorreos: { correo: marcado }
+
+function pintarArchivo(r) {
+  var cont = $('anios'), anios = r.archivo || [];
+  cont.textContent = '';
+  $('titulo-anual').classList.toggle('oculto', !anios.length);
+  anios.forEach(function (a) {
+    var fila = document.createElement('div'); fila.className = 'fila';
+    var c = document.createElement('div'); c.className = 'c';
+    var t = document.createElement('div'); t.textContent = String(a.anio) + (a.en_curso ? ' (en curso)' : '');
+    var d = document.createElement('div'); d.className = 'chip';
+    d.textContent = a.n_periodos + (a.n_periodos === 1 ? ' periodo cerrado' : ' periodos cerrados') + (a.archivado ? ' · archivado' : '') +
+      (a.en_curso ? ' · añade el periodo en curso si ya tiene gastos' : '');
+    c.append(t, d);
+    c.append(botonMini('Descargar Excel', 'sec', function (b) { descargarExcel(a.anio, b, true); }));
+    if (r.puede_enviar) c.append(botonMini('Enviar por correo', 'sec', function () { abrirEnvio(a.anio); }));
+    fila.append(c); cont.append(fila);
+  });
+  var u = r.ultimo_envio;
+  $('ultimo-envio').textContent = u ? 'Último envío: ' + fechaCorta.format(new Date(u.cuando)) + ' · ' + u.quien + ' · Excel ' + u.anio + ' → ' + (u.a || []).join(', ') : '';
+}
+
+function abrirEnvio(anio) {
+  anioEnvio = anio; seleccionCorreos = {};
+  $('envio-titulo').textContent = 'Enviar el Excel de ' + anio;
+  $('msg-envio').textContent = ''; $('e-email').value = '';
+  pintarEnvio(); mostrar('envio');
+}
+
+// Lista de correos con casilla (todos marcados al abrir) y botón de quitar. Lo marcado se conserva al añadir o quitar.
+function pintarEnvio() {
+  var cont = $('e-lista'), lista = (ultimaRespuesta && ultimaRespuesta.destinatarios) || [];
+  cont.textContent = '';
+  if (!lista.length) { var v = document.createElement('div'); v.className = 'sub'; v.textContent = 'Todavía no hay ningún correo: añade el tuyo y el de la otra persona.'; cont.append(v); }
+  lista.forEach(function (d) {
+    if (!(d.email in seleccionCorreos)) seleccionCorreos[d.email] = true;
+    var fila = document.createElement('div'); fila.className = 'fila';
+    var l = document.createElement('label'); l.style.cssText = 'display:flex;gap:10px;align-items:flex-start;margin:0;color:inherit;font-size:15px;flex:1;min-width:0';
+    var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!seleccionCorreos[d.email]; cb.style.cssText = 'width:auto;margin:3px 0 0';
+    cb.addEventListener('change', function () { seleccionCorreos[d.email] = cb.checked; });
+    var tx = document.createElement('span'); tx.style.overflowWrap = 'anywhere'; tx.textContent = d.email + ' · añadido por ' + d.anadido_por;
+    l.append(cb, tx); fila.append(l);
+    fila.append(botonMini('Quitar', 'peligro', function (b) { quitarCorreo(d.email, b); }));
+    cont.append(fila);
+  });
+  $('enviar-excel').disabled = !lista.length;
+}
+
+function anadirCorreo(ev) {
+  ev.preventDefault();
+  $('msg-envio').textContent = '';
+  llamar({ accion: 'destinatario_anadir', email: $('e-email').value }).then(function (r) {
+    if (!r.ok) { $('msg-envio').textContent = 'No se ha añadido: ' + (r.detalle || r.error); return; }
+    $('e-email').value = ''; pintar(r); mostrar('envio'); pintarEnvio();
+  }).catch(function () { $('msg-envio').textContent = 'Sin conexión: vuelve a intentarlo.'; });
+}
+
+function quitarCorreo(email, boton) {
+  if (!confirm('¿Quitar ' + email + ' de la lista de correos?')) return;
+  boton.disabled = true;
+  llamar({ accion: 'destinatario_quitar', email: email }).then(function (r) {
+    if (!r.ok) { $('msg-envio').textContent = 'No se ha quitado: ' + (r.detalle || r.error); return; }
+    delete seleccionCorreos[email]; pintar(r); mostrar('envio'); pintarEnvio();
+  }).catch(function () { $('msg-envio').textContent = 'Sin conexión: vuelve a intentarlo.'; })
+    .then(function () { boton.disabled = false; });
+}
+
+function enviarPorCorreo(ev) {
+  ev.preventDefault();
+  var para = Object.keys(seleccionCorreos).filter(function (e) { return seleccionCorreos[e]; });
+  if (!para.length) { $('msg-envio').textContent = 'Marca al menos un correo.'; return; }
+  if (!confirm('¿Enviar el Excel de ' + anioEnvio + ' a:\n\n' + para.join('\n') + '\n\nSale desde la cuenta de Google que instaló la app.')) return;
+  $('enviar-excel').disabled = true; $('msg-envio').textContent = 'Enviando…';
+  llamar({ accion: 'enviar_excel', anio: anioEnvio, destinatarios: para }).then(function (r) {
+    if (!r.ok) { $('msg-envio').textContent = 'No se ha enviado: ' + (r.detalle || r.error); return; }
+    pintar(r); mostrarAvisos(['Excel de ' + r.enviado.anio + ' enviado a: ' + r.enviado.a.join(', ')]);
+  }).catch(function () { $('msg-envio').textContent = 'Sin conexión: no se sabe si se ha enviado; mira «Último envío» antes de repetirlo.'; })
+    .then(function () { $('enviar-excel').disabled = false; });
 }
 
 function abrirCierre() {
@@ -382,9 +464,12 @@ function leerTicket(b64) {
     var libre = function (id) { var e = $(id); return !e.value.trim() || e.classList.contains('revisar') || e.classList.contains('dudoso'); };
     if (p.comercio && libre('f-concepto')) { $('f-concepto').value = p.comercio; marcar('f-concepto', c.comercio); puestos.push('comercio'); }
     if (p.total && libre('f-importe')) { $('f-importe').value = String(p.total).replace('.', ','); marcar('f-importe', c.total); puestos.push('importe'); }
-    if (p.fecha && ($('f-fecha').value === hoy() || libre('f-fecha'))) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
+    var fechaLibre = $('f-fecha').value === hoy() || libre('f-fecha'), sinFecha = false;
+    if (p.fecha && fechaLibre) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
+    else if (!p.fecha && fechaLibre) { marcar('f-fecha', 'baja'); sinFecha = true; }   // no se ha leído: se avisa en rojo en lugar de dejar la de hoy sin decir nada
     info(pre + (puestos.length ? 'Leído del ticket: revisa ' + puestos.join(', ') + ' antes de guardar. Amarillo = revísalo, rojo = dudoso.'
-      : 'No he podido leer el ticket. Rellena los datos a mano: la foto se guarda igualmente.'));
+      : 'No he podido leer el ticket. Rellena los datos a mano: la foto se guarda igualmente.') +
+      (sinFecha ? ' No se ha podido leer la FECHA del ticket: se ha dejado la de hoy, pon la que sale en el ticket.' : ''));
   }).catch(function () { if (yo === lecturaId) info('Sin conexión: no se ha leído el ticket.'); });
 }
 
@@ -473,6 +558,9 @@ document.addEventListener('DOMContentLoaded', function () {
   $('btn-excel-actual').addEventListener('click', function () { descargarExcel('actual', $('btn-excel-actual')); });
   $('form-cierre').addEventListener('submit', enviarCierre);
   $('cancelar-cierre').addEventListener('click', function () { mostrar('lista'); });
+  $('form-envio').addEventListener('submit', enviarPorCorreo);
+  $('form-correo').addEventListener('submit', anadirCorreo);
+  $('volver-envio').addEventListener('click', function () { mostrar('lista'); });
   // Si la otra persona propone un cierre mientras la app estaba abierta en segundo plano, se ve al volver a ella.
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && config && !$('vista-lista').classList.contains('oculto')) cargar();
