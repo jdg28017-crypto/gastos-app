@@ -86,10 +86,68 @@ function pintar(r) {
       c.append(t, d);
       var i = document.createElement('div'); i.className = 'i' + (m.importe_imputado < 0 ? ' neg' : '');
       i.textContent = euros.format(m.importe_imputado);
+      if (m.tiene_ticket) {
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = 'Ver ticket';
+        b.style.cssText = 'margin:6px 0 0;padding:6px 10px;font-size:13px;width:auto';
+        b.addEventListener('click', function () { verTicket(m.id, b); });
+        c.append(b);
+      }
       fila.append(c, i);
       cont.append(fila);
     });
   mostrar('lista');
+}
+
+var TEXTO_AVISO = {
+  ticket_repetido: 'Aviso: esta foto de ticket ya estaba subida en este periodo. Si es un duplicado, avisa para anularlo.',
+  posible_duplicado_del_otro: 'Aviso: parece el mismo gasto que ya apuntó la otra persona (mismo concepto, fecha e importe).'
+};
+function mostrarAvisos(avisos) {
+  var el = $('aviso');
+  if (!avisos || !avisos.length) { el.classList.add('oculto'); return; }
+  el.textContent = avisos.map(function (a) { return TEXTO_AVISO[a] || a; }).join(' ');
+  el.classList.remove('oculto');
+}
+
+function verTicket(id, boton) {
+  boton.disabled = true;
+  llamar({ accion: 'ticket', id: id }).then(function (r) {
+    if (!r.ok) { mostrarAvisos(['No se ha podido abrir el ticket.']); return; }
+    $('visor-img').src = 'data:' + r.mime + ';base64,' + r.datos;
+    $('visor').classList.remove('oculto');
+  }).catch(function () { mostrarAvisos(['Sin conexión: no se puede abrir el ticket.']); })
+    .then(function () { boton.disabled = false; });
+}
+
+// Reduce la foto en el propio móvil (lado máximo 1.600 px, JPEG) antes de enviarla: menos datos y más rápido.
+function reducirFoto(archivo) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(archivo);
+    var img = new Image();
+    img.onload = function () {
+      var k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      var calidad = 0.75, b64;
+      do { b64 = c.toDataURL('image/jpeg', calidad).split(',')[1]; calidad -= 0.1; } while (b64.length > 1400000 && calidad > 0.2);
+      b64.length > 1400000 ? reject(new Error('La foto es demasiado grande')) : resolve({ b64: b64, vista: 'data:image/jpeg;base64,' + b64 });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('No se puede leer esa imagen')); };
+    img.src = url;
+  });
+}
+
+var fotoLista = null;   // { b64, vista } de la foto elegida en el formulario
+function elegirFoto() {
+  var f = $('f-foto').files[0];
+  fotoLista = null; $('f-miniatura').classList.add('oculto');
+  if (!f) return;
+  $('msg').textContent = 'Preparando la foto…';
+  reducirFoto(f).then(function (r) {
+    fotoLista = r; $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); $('msg').textContent = '';
+  }).catch(function (e) { $('msg').textContent = e.message; $('f-foto').value = ''; });
 }
 
 function cargar() {
@@ -123,11 +181,14 @@ function guardar(ev) {
   if (!imp || imp.valor === 0) { $('msg').textContent = 'El importe no es válido.'; return; }
   idEnCurso = idEnCurso || idNuevo();
   $('guardar').disabled = true;
-  llamar({ accion: 'anadir', mov: { id: idEnCurso, concepto: $('f-concepto').value, fecha: $('f-fecha').value,
-    importe_imputado: imp.valor, expresion: imp.expresion, reparto: $('f-reparto').value } })
+  var mov = { id: idEnCurso, concepto: $('f-concepto').value, fecha: $('f-fecha').value,
+    importe_imputado: imp.valor, expresion: imp.expresion, reparto: $('f-reparto').value };
+  if (fotoLista) mov.imagen = fotoLista.b64;
+  llamar({ accion: 'anadir', mov: mov })
     .then(function (r) {
       if (!r.ok) { $('msg').textContent = 'No se ha guardado: ' + (r.detalle || r.error); return; }
-      idEnCurso = null; $('form').reset(); pintar(r);
+      idEnCurso = null; fotoLista = null; $('form').reset(); $('f-miniatura').classList.add('oculto');
+      pintar(r); mostrarAvisos(r.avisos);
     })
     .catch(function () { $('msg').textContent = 'Sin conexión. Vuelve a pulsar Guardar cuando tengas cobertura; no se duplicará.'; })
     .then(function () { $('guardar').disabled = false; });
@@ -139,7 +200,11 @@ document.addEventListener('DOMContentLoaded', function () {
   procesarAlta();
   config = leerConfig();
   $('nuevo').addEventListener('click', function () { $('f-fecha').value = hoy(); mostrar('form'); $('f-concepto').focus(); });
-  $('cancelar').addEventListener('click', function () { idEnCurso = null; mostrar('lista'); });
+  $('cancelar').addEventListener('click', function () {
+    idEnCurso = null; fotoLista = null; $('form').reset(); $('f-miniatura').classList.add('oculto'); mostrar('lista');
+  });
+  $('f-foto').addEventListener('change', elegirFoto);
+  $('visor-cerrar').addEventListener('click', function () { $('visor').classList.add('oculto'); $('visor-img').removeAttribute('src'); });
   $('form').addEventListener('submit', guardar);
   $('form-alta').addEventListener('submit', altaPegada);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
