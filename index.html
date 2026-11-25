@@ -38,6 +38,11 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 .dudoso{border-color:#d9534f !important;background:#fdecea !important;color:#1c2421 !important}
 #visor{position:fixed;inset:0;background:#000d;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;z-index:5}
 #visor:not(.oculto){display:flex}
+.fila.anulada{opacity:.55}
+.fila.anulada .t{text-decoration:line-through}
+.mini{margin:6px 6px 0 0;padding:6px 10px;font-size:13px;width:auto}
+.mini.sec{background:transparent;color:var(--acento);border:1px solid var(--acento)}
+.mini.peligro{background:transparent;color:var(--rojo);border:1px solid var(--rojo)}
 </style>
 </head>
 <body>
@@ -56,26 +61,34 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 <main id="vista-lista" class="oculto">
   <div class="saldo"><span id="periodo"></span><b id="saldo"></b><span id="totales"></span></div>
   <div id="aviso" role="status" class="oculto" style="background:#fff3cd;color:#5c4400;border-radius:10px;padding:10px 12px;margin:8px 0"></div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0"><input type="checkbox" id="ver-anulados" style="width:auto;margin:0"> Mostrar gastos anulados</label>
   <div id="lista"></div>
 </main>
 <div id="visor" class="oculto">
   <img id="visor-img" alt="Ticket" style="max-width:100%;max-height:80vh;border-radius:8px;background:#fff">
+  <iframe id="visor-pdf" title="Ticket en PDF" class="oculto" style="width:100%;height:75vh;border:0;border-radius:8px;background:#fff"></iframe>
   <button type="button" id="visor-cerrar" style="max-width:240px">Cerrar</button>
 </div>
 <button class="fab oculto" id="nuevo" type="button">Apuntar gasto</button>
 
 <main id="vista-form" class="oculto">
   <form id="form" autocomplete="off">
+    <h2 id="titulo-form" style="font-size:17px;margin:0 0 4px">Apuntar gasto</h2>
     <label for="f-concepto">Concepto (comercio y detalle)</label>
     <input id="f-concepto" required maxlength="200" placeholder="Ahorramás (compra comida)">
     <label for="f-importe">Importe imputado (€; negativo = devolución)</label>
     <input id="f-importe" required inputmode="decimal" placeholder="12,50 o 65,8-6,6">
     <label for="f-fecha">Fecha</label>
     <input id="f-fecha" type="date" required>
-    <label for="f-foto">Foto del ticket (opcional)</label>
-    <input id="f-foto" type="file" accept="image/*">
-    <img id="f-miniatura" alt="Vista previa del ticket" class="oculto" style="max-width:100%;max-height:180px;margin-top:8px;border-radius:8px">
-    <div id="info-ocr" class="sub" role="status" style="margin-top:6px"></div>
+    <div id="bloque-foto">
+      <label for="f-foto">Foto o escaneo del ticket (opcional)</label>
+      <input id="f-foto" type="file" accept="image/*,application/pdf">
+      <div class="sub" style="font-size:13px;margin-top:4px">Se lee mejor con buena luz y el ticket plano. También vale el escáner del iPhone: «Elegir archivo» → botón ··· → «Escanear documentos» (se guarda como PDF).</div>
+      <img id="f-miniatura" alt="Vista previa del ticket" class="oculto" style="max-width:100%;max-height:180px;margin-top:8px;border-radius:8px">
+      <div id="f-pdf" class="sub oculto" style="margin-top:8px"></div>
+      <div id="info-ocr" class="sub" role="status" style="margin-top:6px"></div>
+    </div>
+    <div id="nota-edicion" class="sub oculto" style="margin-top:8px">La foto no se puede cambiar. Si fue un error, anula el gasto y apúntalo de nuevo.</div>
     <label for="f-reparto">Reparto</label>
     <select id="f-reparto"><option value="50/50">50 / 50</option><option value="100-otro">100 % del otro</option></select>
     <div id="msg" role="alert"></div>

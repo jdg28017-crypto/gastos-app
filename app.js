@@ -73,29 +73,79 @@ function pintar(r) {
   var s = r.saldo;
   $('saldo').textContent = s.deudor ? s.deudor + ' debe a ' + s.acreedor + ': ' + euros.format(s.importe) : 'Saldo a cero';
   $('totales').textContent = 'Ana ' + euros.format(s.total_ana) + ' · Juan ' + euros.format(s.total_juan);
+  ultimaRespuesta = r;
   var cont = $('lista');
   cont.textContent = '';
-  r.movimientos.filter(function (m) { return !m.anulado; })
+  var verAnulados = $('ver-anulados').checked;
+  r.movimientos.filter(function (m) { return verAnulados || !m.anulado; })
     .sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; })
     .forEach(function (m) {
-      var fila = document.createElement('div'); fila.className = 'fila';
+      var fila = document.createElement('div'); fila.className = 'fila' + (m.anulado ? ' anulada' : '');
       var c = document.createElement('div'); c.className = 'c';
-      var t = document.createElement('div'); t.textContent = m.concepto;
+      var t = document.createElement('div'); t.className = 't'; t.textContent = m.concepto;
       var d = document.createElement('div'); d.className = 'chip';
-      d.textContent = m.pagador + ' · ' + fechaCorta.format(new Date(m.fecha)) + (m.reparto === '100-otro' ? ' · 100 % del otro' : '');
+      d.textContent = m.pagador + ' · ' + fechaCorta.format(new Date(m.fecha)) + (m.reparto === '100-otro' ? ' · 100 % del otro' : '') + (m.anulado ? ' · ANULADO' : '');
       c.append(t, d);
       var i = document.createElement('div'); i.className = 'i' + (m.importe_imputado < 0 ? ' neg' : '');
       i.textContent = euros.format(m.importe_imputado);
-      if (m.tiene_ticket) {
-        var b = document.createElement('button'); b.type = 'button'; b.textContent = 'Ver ticket';
-        b.style.cssText = 'margin:6px 0 0;padding:6px 10px;font-size:13px;width:auto';
-        b.addEventListener('click', function () { verTicket(m.id, b); });
-        c.append(b);
+      if (m.tiene_ticket && !m.anulado) c.append(botonMini('Ver ticket', '', function (b) { verTicket(m.id, b); }));
+      if (m.pagador === r.yo) {   // cada uno corrige solo lo que apuntó
+        if (m.anulado) c.append(botonMini('Restaurar', 'sec', function (b) { cambiarEstado('restaurar', m.id, b); }));
+        else {
+          c.append(botonMini('Editar', 'sec', function () { abrirEdicion(m); }));
+          c.append(botonMini('Anular', 'peligro', function (b) {
+            if (confirm('¿Anular este gasto?\n\n' + m.concepto + ' · ' + euros.format(m.importe_imputado) + '\n\nDejará de contar en el saldo. Se puede restaurar.')) cambiarEstado('anular', m.id, b);
+          }));
+        }
       }
       fila.append(c, i);
       cont.append(fila);
     });
   mostrar('lista');
+}
+
+var ultimaRespuesta = null;
+
+function botonMini(texto, clase, accion) {
+  var b = document.createElement('button'); b.type = 'button'; b.className = 'mini ' + clase; b.textContent = texto;
+  b.addEventListener('click', function () { accion(b); });
+  return b;
+}
+
+function cambiarEstado(accion, id, boton) {
+  boton.disabled = true;
+  llamar({ accion: accion, id: id }).then(function (r) {
+    if (!r.ok) { mostrarAvisos(['No se ha podido completar: ' + (r.detalle || r.error)]); return; }
+    mostrarAvisos([]); pintar(r);
+  }).catch(function () { mostrarAvisos(['Sin conexión: no se ha podido cambiar el gasto.']); })
+    .then(function () { boton.disabled = false; });
+}
+
+// Edición: el mismo formulario, con los datos del gasto. La foto no se cambia (se anula y se apunta de nuevo).
+var editandoId = null;
+
+function prepararFormulario(edicion) {
+  $('bloque-foto').classList.toggle('oculto', edicion);
+  $('nota-edicion').classList.toggle('oculto', !edicion);
+  $('titulo-form').textContent = edicion ? 'Editar gasto' : 'Apuntar gasto';
+  $('guardar').textContent = edicion ? 'Guardar cambios' : 'Guardar';
+  $('msg').textContent = '';
+}
+
+function abrirEdicion(m) {
+  editandoId = m.id; idEnCurso = null;
+  prepararFormulario(true); limpiarMarcas();
+  $('f-concepto').value = m.concepto;
+  $('f-importe').value = String(m.expresion || m.importe_imputado).replace(/\./g, ',');
+  $('f-fecha').value = m.fecha;
+  $('f-reparto').value = m.reparto || '50/50';
+  mostrar('form'); $('f-concepto').focus();
+}
+
+function cerrarFormulario() {
+  editandoId = null; idEnCurso = null; fotoLista = null; propuestaOcr = null; lecturaId++;
+  $('form').reset(); $('f-miniatura').classList.add('oculto'); $('f-pdf').classList.add('oculto');
+  limpiarMarcas(); prepararFormulario(false); mostrar('lista');
 }
 
 var TEXTO_AVISO = {
@@ -113,29 +163,87 @@ function verTicket(id, boton) {
   boton.disabled = true;
   llamar({ accion: 'ticket', id: id }).then(function (r) {
     if (!r.ok) { mostrarAvisos(['No se ha podido abrir el ticket.']); return; }
-    $('visor-img').src = 'data:' + r.mime + ';base64,' + r.datos;
+    var pdf = r.mime === 'application/pdf';
+    $('visor-img').classList.toggle('oculto', pdf); $('visor-pdf').classList.toggle('oculto', !pdf);
+    if (pdf) {
+      var bin = atob(r.datos), bytes = new Uint8Array(bin.length);
+      for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+      urlPdf = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      $('visor-pdf').src = urlPdf;
+    } else $('visor-img').src = 'data:' + r.mime + ';base64,' + r.datos;
     $('visor').classList.remove('oculto');
   }).catch(function () { mostrarAvisos(['Sin conexión: no se puede abrir el ticket.']); })
     .then(function () { boton.disabled = false; });
 }
+var urlPdf = null;
+function cerrarVisor() {
+  $('visor').classList.add('oculto'); $('visor-img').removeAttribute('src'); $('visor-pdf').removeAttribute('src');
+  if (urlPdf) { URL.revokeObjectURL(urlPdf); urlPdf = null; }
+}
 
-// Reduce la foto en el propio móvil (lado máximo 1.600 px, JPEG) antes de enviarla: menos datos y más rápido.
+// Límites del servidor: ≈1,9 MB por adjunto (2.600.000 caracteres en base64). Se deja margen.
+var MAX_B64 = 2400000, LADO_MAX = 2400;   // lado máximo 2.400 px: un ticket largo necesita resolución para leerse
+
+// JPEG del canvas que quepa en el límite: baja la calidad y, si hace falta, el tamaño.
+function jpegQueQuepa(canvas, calidad) {
+  var c = canvas, b64;
+  for (var intento = 0; intento < 5; intento++) {
+    for (var q = calidad; q >= 0.4; q -= 0.1) {
+      b64 = c.toDataURL('image/jpeg', q).split(',')[1];
+      if (b64.length <= MAX_B64) return b64;
+    }
+    var r = document.createElement('canvas'); r.width = Math.round(c.width * 0.85); r.height = Math.round(c.height * 0.85);
+    r.getContext('2d').drawImage(c, 0, 0, r.width, r.height); c = r;
+  }
+  return null;
+}
+
+// Copia solo para el OCR: escala de grises y contraste estirado (los tickets térmicos salen pálidos). La que se guarda no se toca.
+function copiaParaOCR(canvas) {
+  var c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+  var g = c.getContext('2d'); g.drawImage(canvas, 0, 0);
+  var datos = g.getImageData(0, 0, c.width, c.height), p = datos.data, n = p.length / 4, hist = new Uint32Array(256), i;
+  for (i = 0; i < p.length; i += 4) { var y = (p[i] * 299 + p[i + 1] * 587 + p[i + 2] * 114) / 1000 | 0; p[i] = y; hist[y]++; }
+  var acum = 0, lo = 0, hi = 255;
+  for (i = 0; i < 256; i++) { acum += hist[i]; if (acum >= n * 0.02) { lo = i; break; } }
+  acum = 0;
+  for (i = 255; i >= 0; i--) { acum += hist[i]; if (acum >= n * 0.02) { hi = i; break; } }
+  if (hi - lo < 40) return null;   // imagen casi plana: mejor no tocarla
+  var k = 255 / (hi - lo);
+  for (i = 0; i < p.length; i += 4) { var v = Math.max(0, Math.min(255, ((p[i] - lo) * k) | 0)); p[i] = p[i + 1] = p[i + 2] = v; }
+  g.putImageData(datos, 0, 0);
+  return jpegQueQuepa(c, 0.88);
+}
+
+// Foto: se reduce en el propio móvil. Devuelve { b64 (se guarda), ocr (copia mejorada para leer), vista }.
 function reducirFoto(archivo) {
   return new Promise(function (resolve, reject) {
     var url = URL.createObjectURL(archivo);
     var img = new Image();
     img.onload = function () {
-      var k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      var k = Math.min(1, LADO_MAX / Math.max(img.width, img.height));
       var c = document.createElement('canvas');
       c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
-      var calidad = 0.75, b64;
-      do { b64 = c.toDataURL('image/jpeg', calidad).split(',')[1]; calidad -= 0.1; } while (b64.length > 1400000 && calidad > 0.2);
-      b64.length > 1400000 ? reject(new Error('La foto es demasiado grande')) : resolve({ b64: b64, vista: 'data:image/jpeg;base64,' + b64 });
+      var b64 = jpegQueQuepa(c, 0.85);
+      if (!b64) { reject(new Error('La foto es demasiado grande')); return; }
+      var ocr = null; try { ocr = copiaParaOCR(c); } catch (e) { /* sin copia mejorada: se lee la original */ }
+      resolve({ b64: b64, ocr: ocr || b64, vista: 'data:image/jpeg;base64,' + b64 });
     };
     img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('No se puede leer esa imagen')); };
     img.src = url;
+  });
+}
+
+// PDF (escáner de documentos del iPhone): se envía tal cual; Google lo lee con OCR igualmente.
+function leerPdf(archivo) {
+  return new Promise(function (resolve, reject) {
+    if (archivo.size > 1900000) { reject(new Error('El PDF ocupa más de 1,9 MB: escanéalo con menos calidad o haz una foto.')); return; }
+    var fr = new FileReader();
+    fr.onload = function () { var b64 = String(fr.result).split(',')[1]; resolve({ b64: b64, ocr: b64, vista: null, pdf: true, nombre: archivo.name, kb: Math.round(archivo.size / 1024) }); };
+    fr.onerror = function () { reject(new Error('No se puede leer ese PDF')); };
+    fr.readAsDataURL(archivo);
   });
 }
 
@@ -168,12 +276,16 @@ function leerTicket(b64) {
 
 function elegirFoto() {
   var f = $('f-foto').files[0];
-  fotoLista = null; propuestaOcr = null; lecturaId++; info(''); $('f-miniatura').classList.add('oculto');
+  fotoLista = null; propuestaOcr = null; lecturaId++; info('');
+  $('f-miniatura').classList.add('oculto'); $('f-pdf').classList.add('oculto');
   if (!f) return;
-  $('msg').textContent = 'Preparando la foto…';
-  reducirFoto(f).then(function (r) {
-    fotoLista = r; $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); $('msg').textContent = '';
-    leerTicket(r.b64);
+  var esPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+  $('msg').textContent = esPdf ? 'Preparando el PDF…' : 'Preparando la foto…';
+  (esPdf ? leerPdf(f) : reducirFoto(f)).then(function (r) {
+    fotoLista = r; $('msg').textContent = '';
+    if (r.pdf) { $('f-pdf').textContent = 'PDF listo: ' + r.nombre + ' (' + r.kb + ' KB)'; $('f-pdf').classList.remove('oculto'); }
+    else { $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); }
+    leerTicket(r.ocr);
   }).catch(function (e) { $('msg').textContent = e.message; $('f-foto').value = ''; });
 }
 
@@ -206,16 +318,15 @@ function guardar(ev) {
   var imp = evaluarImporte($('f-importe').value);
   $('msg').textContent = '';
   if (!imp || imp.valor === 0) { $('msg').textContent = 'El importe no es válido.'; return; }
-  idEnCurso = idEnCurso || idNuevo();
+  if (!editandoId) idEnCurso = idEnCurso || idNuevo();
   $('guardar').disabled = true;
-  var mov = { id: idEnCurso, concepto: $('f-concepto').value, fecha: $('f-fecha').value,
+  var mov = { id: editandoId || idEnCurso, concepto: $('f-concepto').value, fecha: $('f-fecha').value,
     importe_imputado: imp.valor, expresion: imp.expresion, reparto: $('f-reparto').value };
-  if (fotoLista) { mov.imagen = fotoLista.b64; if (propuestaOcr) mov.ocr = propuestaOcr; }
-  llamar({ accion: 'anadir', mov: mov })
+  if (!editandoId && fotoLista) { mov.imagen = fotoLista.b64; if (propuestaOcr) mov.ocr = propuestaOcr; }
+  llamar({ accion: editandoId ? 'editar' : 'anadir', mov: mov })
     .then(function (r) {
       if (!r.ok) { $('msg').textContent = 'No se ha guardado: ' + (r.detalle || r.error); return; }
-      idEnCurso = null; fotoLista = null; propuestaOcr = null; lecturaId++; $('form').reset(); $('f-miniatura').classList.add('oculto'); limpiarMarcas();
-      pintar(r); mostrarAvisos(r.avisos);
+      cerrarFormulario(); pintar(r); mostrarAvisos(r.avisos);
     })
     .catch(function () { $('msg').textContent = 'Sin conexión. Vuelve a pulsar Guardar cuando tengas cobertura; no se duplicará.'; })
     .then(function () { $('guardar').disabled = false; });
@@ -226,15 +337,14 @@ function hoy() { var d = new Date(); return new Date(d - d.getTimezoneOffset() *
 document.addEventListener('DOMContentLoaded', function () {
   procesarAlta();
   config = leerConfig();
-  $('nuevo').addEventListener('click', function () { $('f-fecha').value = hoy(); mostrar('form'); $('f-concepto').focus(); });
-  $('cancelar').addEventListener('click', function () {
-    idEnCurso = null; fotoLista = null; propuestaOcr = null; lecturaId++; $('form').reset(); $('f-miniatura').classList.add('oculto'); limpiarMarcas(); mostrar('lista');
-  });
+  $('nuevo').addEventListener('click', function () { editandoId = null; prepararFormulario(false); $('f-fecha').value = hoy(); mostrar('form'); $('f-concepto').focus(); });
+  $('cancelar').addEventListener('click', cerrarFormulario);
+  $('ver-anulados').addEventListener('change', function () { if (ultimaRespuesta) pintar(ultimaRespuesta); });
   $('f-foto').addEventListener('change', elegirFoto);
   ['f-concepto', 'f-importe', 'f-fecha'].forEach(function (id) {   // al tocar un campo se da por revisado
     $(id).addEventListener('input', function () { $(id).classList.remove('revisar', 'dudoso'); });
   });
-  $('visor-cerrar').addEventListener('click', function () { $('visor').classList.add('oculto'); $('visor-img').removeAttribute('src'); });
+  $('visor-cerrar').addEventListener('click', cerrarVisor);
   $('form').addEventListener('submit', guardar);
   $('form-alta').addEventListener('submit', altaPegada);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
