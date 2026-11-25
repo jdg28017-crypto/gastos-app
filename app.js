@@ -2,7 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
-var VERSION_APP = 'v8';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
+var VERSION_APP = 'v9';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
@@ -131,7 +131,14 @@ function cambiarEstado(accion, id, boton) {
 // Edición: el mismo formulario, con los datos del gasto. La foto no se cambia (se anula y se apunta de nuevo).
 var editandoId = null;
 
+// Sin foto: los dos botones (hacer foto / escanear). Con foto: solo «Repetir foto».
+function botonesFoto(hayFoto) {
+  $('botones-foto').classList.toggle('oculto', hayFoto);
+  $('repetir-foto').classList.toggle('oculto', !hayFoto);
+}
+
 function prepararFormulario(edicion) {
+  botonesFoto(false);
   $('bloque-foto').classList.toggle('oculto', edicion);
   $('nota-edicion').classList.toggle('oculto', !edicion);
   $('titulo-form').textContent = edicion ? 'Editar gasto' : 'Apuntar gasto';
@@ -273,11 +280,13 @@ function leerTicket(b64) {
     if (!r.ok || !r.propuesta) { info('No se ha podido leer el ticket de forma automática: rellénalo tú.'); return; }
     var p = r.propuesta, c = p.confianza || {}, puestos = [];
     propuestaOcr = p;
-    if (p.comercio && !$('f-concepto').value.trim()) { $('f-concepto').value = p.comercio; marcar('f-concepto', c.comercio); puestos.push('comercio'); }
-    if (p.total && !$('f-importe').value.trim()) { $('f-importe').value = String(p.total).replace('.', ','); marcar('f-importe', c.total); puestos.push('importe'); }
-    if (p.fecha && $('f-fecha').value === hoy()) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
+    // Un campo es «libre» si está vacío o si lo rellenó el lector antes y la persona no lo ha tocado (sigue marcado). Lo escrito a mano nunca se pisa.
+    var libre = function (id) { var e = $(id); return !e.value.trim() || e.classList.contains('revisar') || e.classList.contains('dudoso'); };
+    if (p.comercio && libre('f-concepto')) { $('f-concepto').value = p.comercio; marcar('f-concepto', c.comercio); puestos.push('comercio'); }
+    if (p.total && libre('f-importe')) { $('f-importe').value = String(p.total).replace('.', ','); marcar('f-importe', c.total); puestos.push('importe'); }
+    if (p.fecha && ($('f-fecha').value === hoy() || libre('f-fecha'))) { $('f-fecha').value = p.fecha; marcar('f-fecha', c.fecha); puestos.push('fecha'); }
     info(puestos.length ? 'Leído del ticket: revisa ' + puestos.join(', ') + ' antes de guardar. Amarillo = revísalo, rojo = dudoso.'
-      : 'No he podido leer nada con seguridad: rellénalo tú.');
+      : 'No he podido leer el ticket. Rellena los datos a mano: la foto se guarda igualmente.');
   }).catch(function () { if (yo === lecturaId) info('Sin conexión: no se ha leído el ticket.'); });
 }
 
@@ -292,6 +301,7 @@ function elegirFoto(ev) {
   $('msg').textContent = esPdf ? 'Preparando el PDF…' : 'Preparando la foto…';
   (esPdf ? leerPdf(f) : reducirFoto(f)).then(function (r) {
     fotoLista = r; $('msg').textContent = '';
+    botonesFoto(true);   // ya hay ticket: se quitan las opciones y solo queda «Repetir foto»
     if (r.pdf) { $('f-pdf').textContent = 'PDF listo: ' + r.nombre + ' (' + r.kb + ' KB)'; $('f-pdf').classList.remove('oculto'); }
     else { $('f-miniatura').src = r.vista; $('f-miniatura').classList.remove('oculto'); }
     leerTicket(r.ocr);
@@ -354,6 +364,7 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   $('btn-camara').addEventListener('click', function () { $('f-camara').click(); });
   $('btn-archivo').addEventListener('click', function () { $('f-foto').click(); });
+  $('btn-repetir').addEventListener('click', function () { $('f-camara').click(); });
   $('f-camara').addEventListener('change', elegirFoto);
   $('cancelar').addEventListener('click', cerrarFormulario);
   $('ver-anulados').addEventListener('change', function () { if (ultimaRespuesta) pintar(ultimaRespuesta); });
