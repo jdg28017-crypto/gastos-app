@@ -41,6 +41,7 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 .sr{position:absolute !important;width:1px !important;height:1px !important;padding:0 !important;border:0 !important;opacity:0;overflow:hidden;pointer-events:none}
 .botones-foto{display:flex;gap:8px;margin-top:6px}
 .botones-foto button{margin-top:0;flex:1;padding:14px 8px}
+#arrastre-info:not(.oculto){display:block;margin-top:4px;font-size:14px}
 .fila.anulada{opacity:.55}
 .fila.anulada .t{text-decoration:line-through}
 .mini{margin:6px 6px 0 0;padding:6px 10px;font-size:13px;width:auto}
@@ -62,10 +63,36 @@ button.sec{background:transparent;color:var(--acento);border:1px solid var(--ace
 </main>
 
 <main id="vista-lista" class="oculto">
-  <div class="saldo"><span id="periodo"></span><b id="saldo"></b><span id="totales"></span></div>
+  <div class="saldo"><span id="periodo"></span><b id="saldo"></b><span id="totales"></span><span id="arrastre-info" class="oculto"></span></div>
+  <div id="cierre-banner" role="status" class="oculto" style="background:#e3f2fd;color:#0d3b66;border-radius:10px;padding:12px;margin:8px 0">
+    <div id="cierre-texto" style="margin-bottom:8px"></div>
+    <div id="cierre-botones"></div>
+  </div>
+  <div id="acciones-periodo" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <button type="button" id="btn-cerrar" class="mini sec">Cerrar periodo</button>
+    <button type="button" id="btn-excel-actual" class="mini sec">Excel provisional</button>
+  </div>
   <div id="aviso" role="status" class="oculto" style="background:#fff3cd;color:#5c4400;border-radius:10px;padding:10px 12px;margin:8px 0"></div>
   <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0"><input type="checkbox" id="ver-anulados" style="width:auto;margin:0"> Mostrar gastos anulados <span id="n-anulados"></span></label>
   <div id="lista"></div>
+  <h2 id="titulo-cerrados" class="oculto" style="font-size:16px;margin:20px 0 4px">Periodos cerrados</h2>
+  <div id="cerrados"></div>
+</main>
+
+<main id="vista-cierre" class="oculto">
+  <form id="form-cierre" autocomplete="off">
+    <h2 style="font-size:17px;margin:0 0 4px">Cerrar periodo</h2>
+    <div class="sub" id="cierre-resumen" style="margin-bottom:6px"></div>
+    <label for="c-nombre">Nombre del periodo que se cierra</label>
+    <input id="c-nombre" required maxlength="60" placeholder="SEPTIEMBRE-OCTUBRE 26">
+    <label for="c-siguiente">Nombre del periodo siguiente</label>
+    <input id="c-siguiente" maxlength="60" placeholder="NOVIEMBRE-DICIEMBRE 26 (vacío = PERIODO n+1)">
+    <label style="display:flex;align-items:flex-start;gap:8px;margin-top:12px"><input type="checkbox" id="c-arrastrar" style="width:auto;margin:3px 0 0"> <span>Arrastrar el saldo al periodo siguiente (si no se paga ahora)</span></label>
+    <div class="sub" style="margin-top:10px">La otra persona tendrá que confirmarlo. Mientras tanto no se podrán apuntar ni cambiar gastos. Al confirmar se genera el Excel «DEUDA HOGAR» y empieza el periodo siguiente.</div>
+    <div id="msg-cierre" role="alert" style="color:var(--rojo);min-height:1.4em"></div>
+    <button type="submit" id="enviar-cierre">Proponer cierre</button>
+    <button type="button" class="sec" id="cancelar-cierre">Cancelar</button>
+  </form>
 </main>
 <div id="visor" class="oculto">
   <img id="visor-img" alt="Ticket" style="max-width:100%;max-height:80vh;border-radius:8px;background:#fff">

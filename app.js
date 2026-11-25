@@ -2,7 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
-var VERSION_APP = 'v11';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
+var VERSION_APP = 'v12';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
@@ -63,9 +63,11 @@ function llamar(cuerpo) {
 var euros = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 var fechaCorta = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'UTC' });
 
+var periodoCongelado = false;   // con un cierre propuesto no se puede apuntar ni cambiar nada hasta confirmarlo o rechazarlo
+
 function mostrar(vista) {
-  ['alta', 'lista', 'form'].forEach(function (v) { $('vista-' + v).classList.toggle('oculto', v !== vista); });
-  $('nuevo').classList.toggle('oculto', vista !== 'lista');
+  ['alta', 'lista', 'form', 'cierre'].forEach(function (v) { $('vista-' + v).classList.toggle('oculto', v !== vista); });
+  $('nuevo').classList.toggle('oculto', vista !== 'lista' || periodoCongelado);
 }
 
 function pintar(r) {
@@ -75,6 +77,7 @@ function pintar(r) {
   $('saldo').textContent = s.deudor ? s.deudor + ' debe a ' + s.acreedor + ': ' + euros.format(s.importe) : 'Saldo a cero';
   $('totales').textContent = 'Ana ' + euros.format(s.total_ana) + ' · Juan ' + euros.format(s.total_juan);
   ultimaRespuesta = r;
+  pintarPeriodo(r);
   var cont = $('lista');
   cont.textContent = '';
   var verAnulados = $('ver-anulados').checked;
@@ -92,7 +95,7 @@ function pintar(r) {
       var i = document.createElement('div'); i.className = 'i' + (m.importe_imputado < 0 ? ' neg' : '');
       i.textContent = euros.format(m.importe_imputado);
       if (m.tiene_ticket && !m.anulado) c.append(botonMini('Ver ticket', '', function (b) { verTicket(m.id, b); }));
-      if (m.pagador === r.yo) {   // cada uno corrige solo lo que apuntó
+      if (m.pagador === r.yo && !periodoCongelado) {   // cada uno corrige solo lo que apuntó, y no con un cierre propuesto
         if (m.anulado) {
           c.append(botonMini('Restaurar', 'sec', function (b) { cambiarEstado('restaurar', m.id, b); }));
           c.append(botonMini('Borrar para siempre', 'peligro', function (b) {
@@ -112,6 +115,93 @@ function pintar(r) {
 }
 
 var ultimaRespuesta = null;
+
+function textoSaldo(saldo, verbo) {   // saldo positivo = Juan debe a Ana
+  return saldo ? (saldo > 0 ? 'Juan ' + verbo + ' a Ana ' : 'Ana ' + verbo + ' a Juan ') + euros.format(Math.abs(saldo)) : 'saldo a cero';
+}
+
+// Saldo anterior, aviso de cierre propuesto (con sus botones) y lista de periodos cerrados.
+function pintarPeriodo(r) {
+  var p = r.periodo, otro = r.yo === 'Ana' ? 'Juan' : 'Ana', arr = p.arrastre || 0;
+  periodoCongelado = p.estado === 'pendiente_cierre';
+  $('arrastre-info').textContent = arr ? 'Incluye el saldo anterior: ' + textoSaldo(arr, 'debe') : '';
+  $('arrastre-info').classList.toggle('oculto', !arr);
+  $('btn-cerrar').classList.toggle('oculto', periodoCongelado);
+  var banner = $('cierre-banner'), texto = $('cierre-texto'), botones = $('cierre-botones');
+  botones.textContent = '';
+  banner.classList.toggle('oculto', !periodoCongelado);
+  if (periodoCongelado) {
+    var pr = p.propuesta || {};
+    var resumen = '«' + pr.nombre + '»: Ana ' + euros.format(pr.total_ana) + ' · Juan ' + euros.format(pr.total_juan) + ' · ' + textoSaldo(pr.saldo, 'debe') +
+      '. Siguiente periodo: «' + pr.siguiente + '», ' + (pr.arrastrar ? 'con el saldo arrastrado' : 'empezando de cero') + '.';
+    if (pr.propuesto_por === r.yo) {
+      texto.textContent = 'Has propuesto cerrar ' + resumen + ' Esperando a que lo confirme ' + otro + '. Mientras tanto no se pueden apuntar ni cambiar gastos.';
+      botones.append(botonMini('Cancelar la propuesta', 'sec', function (b) { accionCierre('rechazar_cierre', b); }));
+    } else {
+      texto.textContent = pr.propuesto_por + ' propone cerrar ' + resumen + ' Revísalo antes de confirmar.';
+      botones.append(botonMini('Confirmar y cerrar', '', function (b) {
+        if (confirm('¿Confirmar el cierre de «' + pr.nombre + '»?\n\n' + textoSaldo(pr.saldo, 'debe') + '\n\nSe genera el Excel y los gastos de este periodo ya no se podrán cambiar.')) accionCierre('confirmar_cierre', b);
+      }));
+      botones.append(botonMini('Rechazar', 'peligro', function (b) { accionCierre('rechazar_cierre', b); }));
+    }
+  }
+  var cont = $('cerrados'), cerrados = r.cerrados || [];
+  cont.textContent = '';
+  $('titulo-cerrados').classList.toggle('oculto', !cerrados.length);
+  cerrados.slice().reverse().forEach(function (x) {
+    var fila = document.createElement('div'); fila.className = 'fila';
+    var c = document.createElement('div'); c.className = 'c';
+    var t = document.createElement('div'); t.textContent = x.nombre;
+    var d = document.createElement('div'); d.className = 'chip';
+    d.textContent = textoSaldo(x.saldo, 'debía') + (x.cerrado_en ? ' · cerrado ' + fechaCorta.format(new Date(x.cerrado_en)) : '');
+    c.append(t, d);
+    if (x.tiene_excel) c.append(botonMini('Descargar Excel', 'sec', function (b) { descargarExcel(x.id, b); }));
+    fila.append(c); cont.append(fila);
+  });
+}
+
+function accionCierre(accion, boton) {
+  boton.disabled = true;
+  llamar({ accion: accion }).then(function (r) {
+    if (!r.ok) { mostrarAvisos(['No se ha podido completar: ' + (r.detalle || r.error)]); return; }
+    pintar(r);
+    mostrarAvisos(accion === 'confirmar_cierre' ? ['Periodo cerrado. El Excel está en «Periodos cerrados».'] : []);
+  }).catch(function () { mostrarAvisos(['Sin conexión: no se ha podido completar.']); })
+    .then(function () { boton.disabled = false; });
+}
+
+// Baja el .xlsx (cerrado, o el provisional con id 'actual') sin pasar por Google: el servidor lo da con el token.
+function descargarExcel(id, boton) {
+  boton.disabled = true;
+  llamar({ accion: 'excel', id: id }).then(function (r) {
+    if (!r.ok) { mostrarAvisos(['No se ha podido preparar el Excel.']); return; }
+    var bin = atob(r.datos), bytes = new Uint8Array(bin.length);
+    for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    var url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    var a = document.createElement('a'); a.href = url; a.download = r.nombre; document.body.append(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }).catch(function () { mostrarAvisos(['Sin conexión: no se puede preparar el Excel.']); })
+    .then(function () { boton.disabled = false; });
+}
+
+function abrirCierre() {
+  var r = ultimaRespuesta; if (!r) return;
+  $('cierre-resumen').textContent = 'Ana ' + euros.format(r.saldo.total_ana) + ' · Juan ' + euros.format(r.saldo.total_juan) + ' · ' + textoSaldo(r.saldo.saldo, 'debe') + '.';
+  $('c-nombre').value = r.periodo.nombre; $('c-siguiente').value = ''; $('c-arrastrar').checked = false; $('msg-cierre').textContent = '';
+  mostrar('cierre');
+}
+
+function enviarCierre(ev) {
+  ev.preventDefault();
+  $('enviar-cierre').disabled = true; $('msg-cierre').textContent = '';
+  llamar({ accion: 'proponer_cierre', nombre: $('c-nombre').value, siguiente: $('c-siguiente').value, arrastrar: $('c-arrastrar').checked })
+    .then(function (r) {
+      if (!r.ok) { $('msg-cierre').textContent = 'No se ha podido proponer: ' + (r.detalle || r.error); return; }
+      pintar(r);
+    })
+    .catch(function () { $('msg-cierre').textContent = 'Sin conexión: vuelve a intentarlo.'; })
+    .then(function () { $('enviar-cierre').disabled = false; });
+}
 
 function botonMini(texto, clase, accion) {
   var b = document.createElement('button'); b.type = 'button'; b.className = 'mini ' + clase; b.textContent = texto;
@@ -379,6 +469,14 @@ document.addEventListener('DOMContentLoaded', function () {
   $('btn-camara').addEventListener('click', function () { $('f-camara').click(); });
   $('btn-archivo').addEventListener('click', function () { $('f-foto').click(); });
   $('btn-repetir').addEventListener('click', function () { $('f-camara').click(); });
+  $('btn-cerrar').addEventListener('click', abrirCierre);
+  $('btn-excel-actual').addEventListener('click', function () { descargarExcel('actual', $('btn-excel-actual')); });
+  $('form-cierre').addEventListener('submit', enviarCierre);
+  $('cancelar-cierre').addEventListener('click', function () { mostrar('lista'); });
+  // Si la otra persona propone un cierre mientras la app estaba abierta en segundo plano, se ve al volver a ella.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && config && !$('vista-lista').classList.contains('oculto')) cargar();
+  });
   $('btn-sin-recorte').addEventListener('click', function () { if (ultimoArchivo) procesarArchivo(ultimoArchivo, { recortar: false }); });
   $('f-camara').addEventListener('change', elegirFoto);
   $('cancelar').addEventListener('click', cerrarFormulario);
