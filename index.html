@@ -33,7 +33,7 @@ button{background:var(--acento);color:#fff;border:0;font-weight:600;margin-top:1
 button.sec{background:transparent;color:var(--acento);border:1px solid var(--acento)}
 .fab{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));box-shadow:0 4px 14px #0004}
 #msg{min-height:1.4em;color:var(--rojo);font-size:14px}
-.oculto{display:none}
+.oculto{display:none !important}   /* !important: otras reglas (p. ej. .botones-foto{display:flex}) no pueden volver a enseñar lo oculto */
 .revisar{border-color:#e0a800 !important;background:#fff8e1 !important;color:#1c2421 !important}
 .dudoso{border-color:#d9534f !important;background:#fdecea !important;color:#1c2421 !important}
 #visor{position:fixed;inset:0;background:#000d;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;z-index:5}

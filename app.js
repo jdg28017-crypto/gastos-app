@@ -2,7 +2,7 @@
 // PWA de gastos compartidos, fase 2: alta por enlace, apunte manual y lista del periodo.
 // El móvil no guarda datos propios salvo el token y la URL de la API (diseño §4.2).
 
-var VERSION_APP = 'v10';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
+var VERSION_APP = 'v11';   // se enseña en la cabecera; subirla a la vez que VERSION de sw.js
 var CLAVE = 'gc_config';
 var $ = function (id) { return document.getElementById(id); };
 var config = null;
